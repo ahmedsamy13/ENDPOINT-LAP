@@ -1,7 +1,14 @@
-name: Verify
-on: [push, pull_request]
+name: Build, verify & publish downloads
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   frontend:
     runs-on: ubuntu-latest
@@ -54,3 +61,55 @@ jobs:
         with:
           name: endpoint-${{ matrix.os }}
           path: src-tauri/target/release/bundle
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-downloads:
+    name: Publish Windows and Linux downloads
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [frontend, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: endpoint-*
+          path: artifacts
+      - name: Prepare named installers and SHA-256 checksums
+        run: python3 scripts/prepare-downloads.py artifacts release
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          tag="v${version}-${GITHUB_SHA:0:7}"
+          title="Relay ${version} — Desktop build ${GITHUB_SHA:0:7}"
+          cat > release-notes.md <<'NOTES'
+          ## Download Relay
+
+          - **Windows 10/11 x64:** download `Relay-Windows-x64-Setup.exe` and run the installer.
+          - **Ubuntu/Debian amd64:** download `Relay-Linux-amd64.deb` and install with `sudo apt install ./Relay-Linux-amd64.deb`.
+          - Verify downloads against `SHA256SUMS.txt`.
+
+          These are unsigned developer builds. Windows may display an unknown-publisher warning; code signing is not configured. WebView2 is required and may be downloaded by the Windows installer if it is absent. The installed application runs locally without an account or application server. These builds are tested by automated suites, not a complete manual Windows/macOS certification.
+
+          See the repository README and docs/VALIDATION.md for supported features and current limitations.
+          NOTES
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # Retry only an unpublished draft. Never silently replace a published build.
+            if test "$(gh release view "$tag" --json isDraft --jq .isDraft)" != true; then
+              echo "::notice::Downloads for this commit are already published; preserving the immutable release."
+              exit 0
+            fi
+          else
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "$title" --notes-file release-notes.md
+          fi
+          gh release upload "$tag" release/Relay-Windows-x64-Setup.exe release/Relay-Linux-amd64.deb release/SHA256SUMS.txt --clobber
+          gh release edit "$tag" --draft=false --latest --title "$title" --notes-file release-notes.md
+          printf 'Windows: https://github.com/%s/releases/latest/download/Relay-Windows-x64-Setup.exe\n' "$GH_REPO" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Linux: https://github.com/%s/releases/latest/download/Relay-Linux-amd64.deb\n' "$GH_REPO" >> "$GITHUB_STEP_SUMMARY"

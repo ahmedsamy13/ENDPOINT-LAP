@@ -38,7 +38,7 @@ Reproduce SQLite measurements with `cargo run --manifest-path src-tauri/Cargo.to
 
 ## Remaining limitations / distribution gates
 
-- Windows/macOS CI build definitions exist; builds, runtime, keychain, dialogs, installers, signing and notarization still need those platforms. CI configuration is not evidence that hosted jobs have passed.
+- Windows/macOS CI build definitions exist; builds, runtime, keychain, dialogs, installers, signing and notarization still need those platforms. The download workflow now publishes named Windows/Linux installers and checksums only after its test/build dependencies pass. CI configuration is not evidence that a particular hosted run has passed.
 - No WebSocket, SSE streaming, gRPC, mock server, CLI, automatic Git sync, generated API docs or response diffing.
 - OAuth supports client credentials and manual refresh grants. Authorization code/PKCE/browser callbacks and automatic scheduled refresh are absent.
 - JWT is accepted as a bearer token, without signing/claim-generation UI. There is no mTLS/client-certificate or custom proxy-profile UI.

@@ -12,3 +12,6 @@ test-results/
 
 *.tsbuildinfo
 src-tauri/gen/
+
+__pycache__/
+*.py[cod]

@@ -6,6 +6,21 @@ A local-first **desktop API client** built with React, TypeScript, Vite, Tauri 2
 
 This is a working **0.1 developer release**. It does not implement every feature of Postman, Insomnia or Bruno. See [validation and limitations](docs/VALIDATION.md) before distribution.
 
+## Download
+
+| Platform                     | Installer                                                                                                                               |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Windows 10 / 11 · 64-bit** | [⬇ Download Relay for Windows (.exe)](https://github.com/ahmedsamy13/ENDPOINT-LAP/releases/latest/download/Relay-Windows-x64-Setup.exe) |
+| **Ubuntu / Debian · amd64**  | [⬇ Download Relay for Linux (.deb)](https://github.com/ahmedsamy13/ENDPOINT-LAP/releases/latest/download/Relay-Linux-amd64.deb)         |
+
+[All releases](https://github.com/ahmedsamy13/ENDPOINT-LAP/releases) · [SHA-256 checksums](https://github.com/ahmedsamy13/ENDPOINT-LAP/releases/latest/download/SHA256SUMS.txt) · [Build status](https://github.com/ahmedsamy13/ENDPOINT-LAP/actions/workflows/ci.yml)
+
+The first download becomes available only after the native build jobs and tests succeed. Every successful main-branch build publishes both installers together; failed builds never replace the latest release. GitHub Actions creates the release automatically, with no personal access token required.
+
+**Windows:** run the `.exe` installer. It installs for the current user. WebView2 is required; if missing, the installer downloads it, requiring Internet during that initial installation. No account or Internet is required merely to open the installed app. These developer builds are unsigned; Windows may show an unknown-publisher warning. A signed public distribution is not yet configured.
+
+**Linux:** install the downloaded package with `sudo apt install ./Relay-Linux-amd64.deb` so your package manager resolves WebKit/GTK prerequisites. Other distributions should build from source; an AppImage is not published by this workflow.
+
 ## Run the desktop app
 
 Use Node.js 22.12+ (24 tested), the Rust toolchain declared in `rust-toolchain.toml`, and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/).
