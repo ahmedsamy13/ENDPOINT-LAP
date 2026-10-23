@@ -4,7 +4,7 @@ A local-first **desktop API client** built with React, TypeScript, Vite, Tauri 2
 
 ![Relay's redesigned API studio](docs/images/relay-studio.png)
 
-This is a working **0.1 developer release**. It does not implement every feature of Postman, Insomnia or Bruno. See [validation and limitations](docs/VALIDATION.md) before distribution.
+This is a working **0.1 developer release**. See [validation and limitations](docs/VALIDATION.md) before distribution.
 
 ## Download
 
@@ -48,7 +48,7 @@ No environment variable or credential is required to launch Relay. API-specific 
 - **Continue from the response:** inspect a JSON path and securely capture its value for the next request. Start assertions directly from the results view.
 - **Stay local:** named requests, hierarchy, environments, settings, saved session IDs and history persist in SQLite; keychain values never enter portable exports.
 
-Read [design decisions](docs/DESIGN.md) for the UX and mint/amber identity.
+Read [design decisions](docs/DESIGN.md) for the UX and blue/cyan identity.
 
 ## Implemented capabilities
 

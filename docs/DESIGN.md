@@ -4,7 +4,7 @@ Relay's interface was redesigned in response to a specific product requirement: 
 
 ## Identity
 
-The Relay wordmark and two interlocking route symbols are original SVG/CSS geometry. No competitor logos, illustrations or UI assets are used. A low-saturation forest/charcoal canvas, cool mint primary (`#9cdec7`), and warm amber secondary (`#e2b76d`) replace the previous violet palette. Amber marks secondary signals, pending changes and small reference markers; mint marks primary actions and active paths. Response status and HTTP methods retain semantic color differences.
+The Relay wordmark and two interlocking route symbols are original SVG/CSS geometry. No competitor logos, illustrations or UI assets are used. Neutral charcoal/slate surfaces, a familiar soft blue primary (`#60a5fa`), and a muted cyan secondary (`#67c6dd`) provide the current palette. Blue marks primary actions and active paths; cyan marks secondary signals and reference markers. Response status and HTTP methods retain distinct semantic colors. This palette update changes colors only: component geometry, layout, typography and interactions are unchanged.
 
 The brand is applied to the window title, packaged product name, desktop icon set, startup view, editor palette, dialogs, notifications and footer. The existing native identifier/database/keychain namespace remains stable so the visual rebrand does not silently strand local data.
 

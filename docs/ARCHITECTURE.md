@@ -56,6 +56,6 @@ HTML preview uses an empty iframe sandbox and an additional no-script/no-network
 
 ## UI and distribution
 
-See [DESIGN.md](DESIGN.md) for the request-recipe interaction, side-by-side/stacked layout, optional library, and original mint/amber identity. UI-only layout preferences use localStorage; workspaces use SQLite. Native close requests are intercepted when drafts are dirty.
+See [DESIGN.md](DESIGN.md) for the request-recipe interaction, side-by-side/stacked layout, optional library, and blue/cyan identity. UI-only layout preferences use localStorage; workspaces use SQLite. Native close requests are intercepted when drafts are dirty.
 
 Windows uses WebView2, macOS WKWebView, Linux WebKitGTK 4.1. Builds use Rust 1.99.1 and Node 24. CI config targets Linux deb, Windows NSIS and macOS DMG. Linux was exercised locally; Windows/macOS builds and runtime require independent CI/OS validation. Public distribution needs signing/notarization and update policy work.
