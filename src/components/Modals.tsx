@@ -36,16 +36,18 @@ export function Modal({
   children,
   onClose,
   wide = false,
+  busy = false,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  busy?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current;
-    d?.showModal();
+    if (d && !d.open) d.showModal();
     return () => d?.close();
   }, []);
   return (
@@ -53,27 +55,18 @@ export function Modal({
       ref={ref}
       className={`modal ${wide ? "wide" : ""}`}
       aria-label={title}
+      aria-busy={busy}
       onCancel={(e) => {
         e.preventDefault();
-        onClose();
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          const r = e.currentTarget.getBoundingClientRect();
-          if (
-            e.clientX < r.left ||
-            e.clientX > r.right ||
-            e.clientY < r.top ||
-            e.clientY > r.bottom
-          )
-            onClose();
-        }
+        if (!busy) onClose();
       }}
     >
       <div className="modal-heading">
         <h2>{title}</h2>
         <button
           className="icon-button"
+          type="button"
+          disabled={busy}
           aria-label="Close dialog"
           onClick={onClose}
         >
@@ -102,11 +95,30 @@ export function EnvironmentsModal({ onClose }: { onClose: () => void }) {
   const envId = useWorkspace((s) => s.environmentId);
   const projectId = useWorkspace((s) => s.projectId);
   const toast = useWorkspace((s) => s.toast);
-  const [selected, setSelected] = useState(envId || environments[0]?.id || "");
+  const [selected, setSelected] = useState(
+    envId ||
+      environments.find((e) => !e.projectId || e.projectId === projectId)?.id ||
+      "",
+  );
   const [draft, setDraft] = useState<Environment | undefined>(
     environments.find((e) => e.id === selected),
   );
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const dirty =
+    !!draft &&
+    JSON.stringify(draft) !==
+      JSON.stringify(environments.find((e) => e.id === selected));
+  const discard = () =>
+    !dirty ||
+    confirmAction(
+      "Your unsaved environment changes will be discarded.",
+      "Discard environment changes?",
+      "Discard changes",
+    );
+  const close = async () => {
+    if (!busy && (await discard())) onClose();
+  };
   const select = async (id: string) => {
     if (
       draft &&
@@ -125,6 +137,7 @@ export function EnvironmentsModal({ onClose }: { onClose: () => void }) {
   async function save() {
     if (!draft) return;
     setBusy(true);
+    setError("");
     try {
       if (!draft.name.trim()) throw new Error("Name is required");
       const variables = await secureRows(draft.variables, draft.id);
@@ -133,121 +146,139 @@ export function EnvironmentsModal({ onClose }: { onClose: () => void }) {
       useWorkspace.getState().setEnvironment(draft.id);
       toast("Environment saved locally");
     } catch (e) {
-      toast(String(e));
+      setError(String(e));
     } finally {
       setBusy(false);
     }
   }
   return (
-    <Modal title="Environments" onClose={onClose} wide>
-      <div className="environment-layout">
-        <div className="environment-list">
-          {environments
-            .filter((e) => !e.projectId || e.projectId === projectId)
-            .map((e) => (
-              <button
-                key={e.id}
-                className={e.id === selected ? "active" : ""}
-                onClick={() => select(e.id)}
-              >
-                <Globe2 size={14} />
-                <span>{e.name}</span>
-                {!e.projectId && <small>Global</small>}
-              </button>
-            ))}
-          <button
-            className="text-button"
-            onClick={() => {
-              const env = {
-                id: id(),
-                projectId,
-                name: "Development",
-                variables: [],
-              };
-              setSelected(env.id);
-              setDraft(env);
-            }}
-          >
-            <Plus size={14} /> New environment
-          </button>
-        </div>
-        <div className="environment-detail">
-          {draft ? (
-            <>
-              <label className="form-field">
-                <span>Environment name</span>
-                <input
-                  aria-label="Environment name"
-                  value={draft.name}
-                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                />
-              </label>
-              <label className="check-label">
-                <input
-                  type="checkbox"
-                  checked={!draft.projectId}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      projectId: e.target.checked ? null : projectId,
-                    })
-                  }
-                />{" "}
-                Available across projects
-              </label>
-              <p className="hint">
-                A global environment named “Globals” supplies baseline variables
-                automatically. Precedence: Globals → project → collection →
-                folder → active environment → request.
-              </p>
-              <Fields
-                rows={draft.variables}
-                secrets
-                keys="Variable"
-                onChange={(variables) => setDraft({ ...draft, variables })}
-              />
-              <p className="hint">
-                <ShieldCheck size={13} /> Mark secrets with the lock icon.
-                Saving moves secret values into the OS keychain; they are never
-                returned to the editor.
-              </p>
-              <div className="modal-actions">
+    <Modal title="Environments" onClose={() => void close()} busy={busy} wide>
+      <fieldset className="modal-fields" disabled={busy}>
+        <div className="environment-layout">
+          <div className="environment-list">
+            {environments
+              .filter((e) => !e.projectId || e.projectId === projectId)
+              .map((e) => (
                 <button
-                  className="text-button danger-text"
-                  disabled={busy}
-                  onClick={async () => {
-                    if (
-                      await confirmAction(
-                        "Requests using these variables will need another environment.",
-                        "Delete environment?",
-                        "Delete environment",
-                      )
-                    )
-                      void call("delete_environment", { id: draft.id })
-                        .then(() => useWorkspace.getState().refresh())
-                        .then(() => {
+                  key={e.id}
+                  className={e.id === selected ? "active" : ""}
+                  onClick={() => select(e.id)}
+                >
+                  <Globe2 size={14} />
+                  <span>{e.name}</span>
+                  {!e.projectId && <small>Global</small>}
+                </button>
+              ))}
+            <button
+              className="text-button"
+              onClick={async () => {
+                if (!(await discard())) return;
+                const env = {
+                  id: id(),
+                  projectId,
+                  name: "Development",
+                  variables: [],
+                };
+                setSelected(env.id);
+                setDraft(env);
+              }}
+            >
+              <Plus size={14} /> New environment
+            </button>
+          </div>
+          <div className="environment-detail">
+            {draft ? (
+              <>
+                <label className="form-field">
+                  <span>Environment name</span>
+                  <input
+                    aria-label="Environment name"
+                    value={draft.name}
+                    onChange={(e) =>
+                      setDraft({ ...draft, name: e.target.value })
+                    }
+                  />
+                </label>
+                <label className="check-label">
+                  <input
+                    type="checkbox"
+                    checked={!draft.projectId}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        projectId: e.target.checked ? null : projectId,
+                      })
+                    }
+                  />{" "}
+                  Available across projects
+                </label>
+                <p className="hint">
+                  A global environment named “Globals” supplies baseline
+                  variables automatically. Precedence: Globals → project →
+                  collection → folder → active environment → request.
+                </p>
+                <Fields
+                  rows={draft.variables}
+                  secrets
+                  keys="Variable"
+                  onChange={(variables) => setDraft({ ...draft, variables })}
+                />
+                <p className="hint">
+                  <ShieldCheck size={13} /> Mark secrets with the lock icon.
+                  Saving moves secret values into the OS keychain; they are
+                  never returned to the editor.
+                </p>
+                <div className="modal-actions">
+                  <button
+                    className="text-button danger-text"
+                    disabled={
+                      busy || !environments.some((e) => e.id === draft.id)
+                    }
+                    onClick={async () => {
+                      if (
+                        await confirmAction(
+                          "Requests using these variables will need another environment.",
+                          "Delete environment?",
+                          "Delete environment",
+                        )
+                      ) {
+                        setBusy(true);
+                        setError("");
+                        try {
+                          await call("delete_environment", { id: draft.id });
+                          await useWorkspace.getState().refresh();
                           setDraft(undefined);
                           setSelected("");
-                        })
-                        .catch((e) => toast(String(e)));
-                  }}
-                >
-                  <Trash2 size={13} /> Delete
-                </button>
-                <button
-                  className="primary-button"
-                  disabled={busy}
-                  onClick={() => void save()}
-                >
-                  {busy ? "Saving…" : "Save & activate"}
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="hint pad">Choose or create an environment.</div>
-          )}
+                        } catch (e) {
+                          setError(String(e));
+                        } finally {
+                          setBusy(false);
+                        }
+                      }
+                    }}
+                  >
+                    <Trash2 size={13} /> Delete
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={busy}
+                    onClick={() => void save()}
+                  >
+                    {busy ? "Saving…" : "Save & activate"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="hint pad">Choose or create an environment.</div>
+            )}
+          </div>
         </div>
-      </div>
+      </fieldset>
+      {error && (
+        <p className="dialog-error" role="alert">
+          {error}
+        </p>
+      )}
     </Modal>
   );
 }
@@ -262,72 +293,104 @@ export function ScopeModal({
   const [tab, setTab] = useState("Variables");
   const toast = useWorkspace((s) => s.toast);
   const [loaded, setLoaded] = useState(false);
+  const [saved, setSaved] = useState<ScopeData>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const close = async () => {
+    if (busy) return;
+    if (
+      JSON.stringify(data) !== JSON.stringify(saved) &&
+      !(await confirmAction(
+        "Your unsaved configuration changes will be discarded.",
+        "Discard configuration changes?",
+        "Discard changes",
+      ))
+    )
+      return;
+    onClose();
+  };
   useEffect(() => {
     void call<Node>("get_node", { id: node.id })
       .then((n) => {
         setData((n.data ?? {}) as ScopeData);
+        setSaved((n.data ?? {}) as ScopeData);
         setLoaded(true);
       })
-      .catch((e) => toast(String(e)));
+      .catch((e) => setError(String(e)));
   }, [node.id, toast]);
   return (
-    <Modal title={`${node.name} · Configuration`} onClose={onClose} wide>
-      <div className="modal-tabs">
-        {["Variables", "Authentication"].map((t) => (
-          <button
-            key={t}
-            className={tab === t ? "active" : ""}
-            onClick={() => setTab(t)}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-      <div className="modal-body">
-        {tab === "Variables" ? (
-          <>
-            <p className="hint">
-              Inherited by all requests below this {node.kind}. More specific
-              scopes take precedence.
-            </p>
-            <Fields
-              rows={data.variables ?? []}
-              secrets
-              onChange={(variables) => setData({ ...data, variables })}
+    <Modal
+      title={`${node.name} · Configuration`}
+      onClose={() => void close()}
+      busy={busy}
+      wide
+    >
+      <fieldset className="modal-fields" disabled={!loaded || busy}>
+        <div className="modal-tabs">
+          {["Variables", "Authentication"].map((t) => (
+            <button
+              key={t}
+              className={tab === t ? "active" : ""}
+              onClick={() => setTab(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="modal-body">
+          {tab === "Variables" ? (
+            <>
+              <p className="hint">
+                Inherited by all requests below this {node.kind}. More specific
+                scopes take precedence.
+              </p>
+              <Fields
+                rows={data.variables ?? []}
+                secrets
+                onChange={(variables) => setData({ ...data, variables })}
+              />
+            </>
+          ) : (
+            <AuthEditor
+              auth={data.auth ?? defaultAuth()}
+              onChange={(auth) => setData({ ...data, auth })}
+              credentialId={node.id}
             />
-          </>
-        ) : (
-          <AuthEditor
-            auth={data.auth ?? defaultAuth()}
-            onChange={(auth) => setData({ ...data, auth })}
-            credentialId={node.id}
-          />
-        )}
-      </div>
-      <div className="modal-actions">
-        <button className="secondary-button" onClick={onClose}>
-          Cancel
-        </button>
-        <button
-          className="primary-button"
-          disabled={!loaded}
-          onClick={() =>
-            void secureRows(data.variables ?? [], node.id)
-              .then((variables) =>
-                useWorkspace
-                  .getState()
-                  .mutate({ ...node, data: { ...data, variables } }),
-              )
-              .then(() => {
-                toast("Configuration saved");
-                onClose();
-              })
-              .catch((e) => toast(String(e)))
-          }
-        >
-          Save configuration
-        </button>
-      </div>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={() => void close()}>
+            Cancel
+          </button>
+          <button
+            className="primary-button"
+            disabled={!loaded || busy}
+            onClick={() => {
+              setBusy(true);
+              setError("");
+              void secureRows(data.variables ?? [], node.id)
+                .then((variables) =>
+                  useWorkspace
+                    .getState()
+                    .mutate({ ...node, data: { ...data, variables } }),
+                )
+                .then(() => {
+                  toast("Configuration saved");
+                  onClose();
+                })
+                .catch((e) => setError(String(e)))
+                .finally(() => setBusy(false));
+            }}
+          >
+            Save configuration
+          </button>
+        </div>
+      </fieldset>
+      {error && (
+        <p className="dialog-error" role="alert">
+          {error}
+        </p>
+      )}
     </Modal>
   );
 }
@@ -382,87 +445,89 @@ export function TransferModal({ onClose }: { onClose: () => void }) {
     }
   }
   return (
-    <Modal title="Import & export" onClose={onClose} wide>
-      <div className="modal-body">
-        <p className="hint">
-          Import Postman collections/environments, OpenAPI 3 JSON/YAML, cURL, or
-          an Endpoint backup. Imports are local and transactional. Imported
-          scripts are never executed.
-        </p>
-        <div className="transfer-actions">
-          <button
-            className="secondary-button"
-            onClick={() =>
-              void importFile()
-                .then((file) => {
-                  if (file) {
-                    setText(file.content);
-                    setParsed(undefined);
-                  }
-                })
-                .catch((e) => setError(String(e)))
-            }
-          >
-            <FileUp size={14} /> Open file
-          </button>
-          <button className="secondary-button" onClick={() => void backup()}>
-            <FileDown size={14} /> Export workspace
-          </button>
-        </div>
-        <textarea
-          className="import-text"
-          aria-label="Import content"
-          placeholder="Paste a collection, OpenAPI document, or cURL command…"
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setParsed(undefined);
-          }}
-        />
-        <p className="hint">
-          Exports omit attachments, keychain values, and recognized credential
-          fields. Review request bodies and custom headers before sharing; these
-          can contain sensitive data. Imports with inline credentials persist in
-          SQLite until you move them to the keychain.
-        </p>
-        {parsed && (
-          <div className="import-summary">
-            <Check size={16} />
-            <strong>
-              {parsed.nodes.length} items · {parsed.environments.length}{" "}
-              environments
-            </strong>
-            {parsed.warnings.map((w, i) => (
-              <p className="hint" key={i}>
-                {w}
-              </p>
-            ))}
+    <Modal title="Import & export" onClose={onClose} busy={busy} wide>
+      <fieldset className="modal-fields" disabled={busy}>
+        <div className="modal-body">
+          <p className="hint">
+            Import Postman collections/environments, OpenAPI 3 JSON/YAML, cURL,
+            or an Endpoint backup. Imports are local and transactional. Imported
+            scripts are never executed.
+          </p>
+          <div className="transfer-actions">
+            <button
+              className="secondary-button"
+              onClick={() =>
+                void importFile()
+                  .then((file) => {
+                    if (file) {
+                      setText(file.content);
+                      setParsed(undefined);
+                    }
+                  })
+                  .catch((e) => setError(String(e)))
+              }
+            >
+              <FileUp size={14} /> Open file
+            </button>
+            <button className="secondary-button" onClick={() => void backup()}>
+              <FileDown size={14} /> Export workspace
+            </button>
           </div>
-        )}
-        {error && <div className="error-banner">{error}</div>}
-      </div>
-      <div className="modal-actions">
-        <button className="secondary-button" onClick={onClose}>
-          Cancel
-        </button>
-        {parsed ? (
-          <button
-            className="primary-button"
-            disabled={busy}
-            onClick={() => void apply()}
-          >
-            {busy ? "Importing…" : "Import into workspace"}
+          <textarea
+            className="import-text"
+            aria-label="Import content"
+            placeholder="Paste a collection, OpenAPI document, or cURL command…"
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setParsed(undefined);
+            }}
+          />
+          <p className="hint">
+            Exports omit attachments, keychain values, and recognized credential
+            fields. Review request bodies and custom headers before sharing;
+            these can contain sensitive data. Imports with inline credentials
+            persist in SQLite until you move them to the keychain.
+          </p>
+          {parsed && (
+            <div className="import-summary">
+              <Check size={16} />
+              <strong>
+                {parsed.nodes.length} items · {parsed.environments.length}{" "}
+                environments
+              </strong>
+              {parsed.warnings.map((w, i) => (
+                <p className="hint" key={i}>
+                  {w}
+                </p>
+              ))}
+            </div>
+          )}
+          {error && <div className="error-banner">{error}</div>}
+        </div>
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose}>
+            Cancel
           </button>
-        ) : (
-          <button
-            className="primary-button"
-            disabled={!text.trim()}
-            onClick={() => void inspect()}
-          >
-            Review import
-          </button>
-        )}
-      </div>
+          {parsed ? (
+            <button
+              className="primary-button"
+              disabled={busy}
+              onClick={() => void apply()}
+            >
+              {busy ? "Importing…" : "Import into workspace"}
+            </button>
+          ) : (
+            <button
+              className="primary-button"
+              disabled={!text.trim()}
+              onClick={() => void inspect()}
+            >
+              Review import
+            </button>
+          )}
+        </div>
+      </fieldset>
     </Modal>
   );
 }

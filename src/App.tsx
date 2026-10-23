@@ -64,6 +64,11 @@ export default function App() {
     void import("@tauri-apps/api/window")
       .then(async ({ getCurrentWindow }) => {
         const cleanup = await getCurrentWindow().onCloseRequested((event) => {
+          if (document.querySelector("dialog[open]")) {
+            event.preventDefault();
+            toast("Finish or close the open dialog before exiting.");
+            return;
+          }
           if (useWorkspace.getState().tabs.some((t) => t.dirty)) {
             event.preventDefault();
             setModal("close-confirm");

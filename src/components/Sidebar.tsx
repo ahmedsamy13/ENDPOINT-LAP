@@ -1,5 +1,5 @@
 import { askText } from "../lib/interactions";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronRight,
   Folder,
@@ -36,6 +36,12 @@ export default function Sidebar({
     null,
   );
   const [scroll, setScroll] = useState(0);
+  const tree = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tree.current?.scrollTo(0, 0);
+    setScroll(0);
+    setMenu(null);
+  }, [search, projectId, favorites]);
   const guard = (p: Promise<unknown>) => void p.catch((e) => toast(String(e)));
   const rows = useMemo(() => {
     const children = new Map<string, Node[]>();
@@ -73,14 +79,17 @@ export default function Sidebar({
     visit(projectId, 0);
     return out;
   }, [nodes, projectId, search, favorites, collapsed]);
-  const start = Math.max(0, Math.floor(scroll / 34) - 8);
+  const start = Math.max(
+    0,
+    Math.min(rows.length - 1, Math.floor(scroll / 34) - 8),
+  );
   const visible = rows.slice(
     start,
     start + Math.ceil(window.innerHeight / 34) + 16,
   );
   const create = async (kind: Node["kind"], parent?: string) => {
     setMenu(null);
-    const name = await askText(
+    await askText(
       `New ${kind}`,
       kind === "request"
         ? "New request"
@@ -93,8 +102,8 @@ export default function Sidebar({
         ? "Give this request a name. You can start sending it immediately."
         : "Keep related work together. You can rename this anytime.",
       `Create ${kind}`,
+      (name) => useWorkspace.getState().createNode(kind, name, parent),
     );
-    if (name) guard(useWorkspace.getState().createNode(kind, name, parent));
     setMenu(null);
   };
   function context(node: Node, e: React.MouseEvent) {
@@ -106,11 +115,16 @@ export default function Sidebar({
     });
   }
   async function rename(node: Node) {
-    const name = await askText(`Rename ${node.kind}`, node.name, "", "Rename");
-    if (name) {
-      const full = await call<Node>("get_node", { id: node.id });
-      await useWorkspace.getState().mutate({ ...full, name });
-    }
+    await askText(
+      `Rename ${node.kind}`,
+      node.name,
+      "",
+      "Rename",
+      async (name) => {
+        const full = await call<Node>("get_node", { id: node.id });
+        await useWorkspace.getState().mutate({ ...full, name });
+      },
+    );
   }
   async function drop(e: React.DragEvent, target: Node) {
     e.preventDefault();
@@ -204,6 +218,7 @@ export default function Sidebar({
       </div>
       <div
         className="collection-tree"
+        ref={tree}
         onScroll={(e) => setScroll(e.currentTarget.scrollTop)}
       >
         <div style={{ height: rows.length * 34, position: "relative" }}>

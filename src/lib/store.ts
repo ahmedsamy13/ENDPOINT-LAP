@@ -48,7 +48,7 @@ interface Workspace {
   ) => Promise<void>;
   open: (node: Node) => Promise<void>;
   newTab: () => void;
-  update: (data: Partial<RequestData>) => void;
+  update: (data: Partial<RequestData>, tabId?: string) => void;
   save: (asNew?: boolean) => Promise<void>;
   close: (id: string) => Promise<void>;
   mutate: (node: Node) => Promise<void>;
@@ -186,10 +186,9 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         favorite: false,
         data,
       };
-      set((s) => ({
-        tabs: [...s.tabs, { node, data, saved: false, dirty: true }],
-        activeId: node.id,
-      }));
+      await call("save_node", { node });
+      await get().refresh();
+      await get().open(node);
       return;
     }
     const nodeId = id();
@@ -216,7 +215,9 @@ export const useWorkspace = create<Workspace>((set, get) => ({
     const full = await call<Node>("get_node", { id: node.id });
     const data = { ...defaultRequest(), ...full.data } as RequestData;
     set((s) => ({
-      tabs: [...s.tabs, { node: full, data, saved: true, dirty: false }],
+      tabs: s.tabs.some((t) => t.node.id === full.id)
+        ? s.tabs
+        : [...s.tabs, { node: full, data, saved: true, dirty: false }],
       activeId: full.id,
     }));
   },
@@ -236,10 +237,10 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       activeId: node.id,
     }));
   },
-  update: (data) =>
+  update: (data, tabId) =>
     set((s) => ({
       tabs: s.tabs.map((t) =>
-        t.node.id === s.activeId
+        t.node.id === (tabId ?? s.activeId)
           ? { ...t, data: { ...t.data, ...data }, dirty: true }
           : t,
       ),
@@ -250,36 +251,46 @@ export const useWorkspace = create<Workspace>((set, get) => ({
     if (!get().projectId) throw new Error("Create a project first");
     if (asNew && tab.running)
       throw new Error("Wait for the running request before Save As");
-    const name =
-      tab.node.name === "Untitled request" || asNew
-        ? await askText(
-            "Save this request",
-            asNew ? `${tab.node.name} copy` : tab.node.name,
-            "Choose a name you’ll recognize in your library.",
-            "Save request",
-          )
-        : tab.node.name;
-    if (!name) return;
-    const node = {
-      ...tab.node,
-      id: asNew ? id() : tab.node.id,
-      name,
-      projectId: tab.node.projectId || get().projectId,
-      parentId: tab.node.parentId || get().projectId,
-      method: tab.data.method,
-      data: tab.data,
+    const persist = async (name: string) => {
+      // Resolve the latest draft after the naming dialog, but retain the tab
+      // identity even when the user switches sessions during an async save.
+      const current = get().tabs.find((t) => t.node.id === tab.node.id);
+      if (!current) throw new Error("This request is no longer open");
+      if (asNew && current.running)
+        throw new Error("Wait for the running request before Save As");
+      const data = current.data;
+      const node = {
+        ...current.node,
+        id: asNew ? id() : current.node.id,
+        name,
+        projectId: current.node.projectId || get().projectId,
+        parentId: current.node.parentId || get().projectId,
+        method: data.method,
+        data,
+      };
+      await call("save_node", { node });
+      set((s) => ({
+        tabs: asNew
+          ? [...s.tabs, { node, data, saved: true, dirty: false }]
+          : s.tabs.map((t) =>
+              t.node.id === tab.node.id
+                ? { ...t, node, saved: true, dirty: t.data !== data }
+                : t,
+            ),
+        activeId: asNew ? node.id : s.activeId,
+      }));
+      await get().refresh();
+      get().toast("Request saved locally");
     };
-    await call("save_node", { node });
-    set((s) => ({
-      tabs: s.tabs.map((t) =>
-        t.node.id === tab.node.id
-          ? { ...t, node, saved: true, dirty: false }
-          : t,
-      ),
-      activeId: node.id,
-    }));
-    await get().refresh();
-    get().toast("Request saved locally");
+    if (tab.node.name === "Untitled request" || asNew)
+      await askText(
+        "Save this request",
+        asNew ? `${tab.node.name} copy` : tab.node.name,
+        "Choose a name you’ll recognize in your library.",
+        "Save request",
+        persist,
+      );
+    else await persist(tab.node.name);
   },
   close: async (tabId) => {
     const t = get().tabs.find((t) => t.node.id === tabId);

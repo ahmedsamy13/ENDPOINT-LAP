@@ -775,13 +775,32 @@ svg {
   box-shadow: 0 0 0 2px #60a5fa08;
 }
 .method-select {
-  width: 91px;
+  width: 120px;
   flex-shrink: 0;
   position: relative;
   display: flex;
   align-items: center;
   border-right: 1px solid #475569;
   margin: 4px 0;
+}
+.method-select:has(input) {
+  width: 245px;
+}
+.method-select select {
+  width: 100%;
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  font: 600 12px var(--mono);
+}
+.method-select:has(input) select {
+  width: 110px;
+  flex-shrink: 0;
+}
+.method-select option {
+  background: #1e2430;
+  color: #d2dbea;
 }
 .method-select input {
   background: transparent;
@@ -3099,4 +3118,80 @@ svg {
 }
 .destructive-button:hover {
   background: #f3b8b8;
+}
+
+/* The response owns the workbench width; request settings follow in page flow. */
+.request-composer {
+  position: sticky;
+  top: -1px;
+  z-index: 4;
+  flex-shrink: 0;
+  background: var(--panel);
+  padding-top: 1px;
+  padding-bottom: 10px;
+}
+.request-composer .url-bar {
+  margin-bottom: 8px;
+}
+.request-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  padding: 5px 2px;
+}
+.request-quick-actions .text-button {
+  font-size: 11px;
+}
+.exchange-grid.response-first-layout {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: 18px;
+  min-height: 0;
+}
+.inbound-workspace,
+.response-first-layout .request-dock {
+  scroll-margin-top: 110px;
+}
+.response-first-layout .response-panel {
+  width: 100%;
+  height: max(420px, calc(100dvh - 310px));
+  min-height: 420px;
+  flex: none;
+}
+.response-first-layout .request-dock {
+  flex: none;
+}
+.response-first-layout .request-recipe {
+  overflow: visible;
+  flex: none;
+}
+.response-first-layout .body-pane {
+  min-height: 330px;
+  height: auto;
+}
+.response-first-layout .body-pane > .code-editor {
+  height: 330px;
+  flex: none;
+}
+.body-toolbar {
+  flex-wrap: wrap;
+}
+.dialog-error {
+  color: #f09a9a;
+  background: #f09a9a0d;
+  border: 1px solid #f09a9a40;
+  border-radius: 5px;
+  padding: 10px;
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.modal-fields {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.response-first-layout .recipe-block {
+  scroll-margin-top: 110px;
 }

@@ -1,10 +1,8 @@
 import { importCurl } from "../lib/importers";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   ChevronDown,
-  Columns2,
-  Rows2,
   MoveUpRight,
   Code2,
   FileUp,
@@ -45,24 +43,42 @@ const bodyTypes = [
   ["graphql", "GraphQL"],
 ];
 export default function RequestPanel({ tab }: { tab: Tab }) {
-  const [section, setSection] = useState("Params");
+  const [section, setSection] = useState(
+    tab.data.bodyType !== "none" ||
+      ["POST", "PUT", "PATCH"].includes(tab.data.method)
+      ? "Body"
+      : "Params",
+  );
+  const outbound = useRef<HTMLElement>(null);
+  const inbound = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (tab.running) inbound.current?.scrollIntoView({ block: "start" });
+  }, [tab.running]);
+  const [customMethod, setCustomMethod] = useState(
+    !methods.includes(tab.data.method),
+  );
+  function showOutbound(section?: string) {
+    if (section) setSection(section);
+    requestAnimationFrame(() => {
+      const target = section
+        ? document.getElementById(`recipe-${section}`)?.closest(".recipe-block")
+        : outbound.current;
+      (target ?? outbound.current)?.scrollIntoView({ block: "start" });
+    });
+  }
   useEffect(() => {
     const handler = (event: Event) => {
       const { id, section } = (
         event as CustomEvent<{ id: string; section: string }>
       ).detail;
-      if (id === tab.node.id) setSection(section);
+      if (id === tab.node.id) showOutbound(section);
     };
     window.addEventListener("relay:configure", handler);
     return () => window.removeEventListener("relay:configure", handler);
   }, [tab.node.id]);
-  const [split, setSplit] = useState(
-    () => Number(localStorage.getItem("relay.exchangeSplit")) || 50,
-  );
-  const [stacked, setStacked] = useState(
-    () => localStorage.getItem("relay.exchangeLayout") === "stacked",
-  );
-  const update = useWorkspace((s) => s.update);
+  const updateTab = useWorkspace((s) => s.update);
+  const update = (data: Parameters<typeof updateTab>[0]) =>
+    updateTab(data, tab.node.id);
   const send = useWorkspace((s) => s.send);
   const cancel = useWorkspace((s) => s.cancel);
   const save = useWorkspace((s) => s.save);
@@ -85,29 +101,16 @@ export default function RequestPanel({ tab }: { tab: Tab }) {
       ...d.variables.map((v) => v.key),
     ]),
   ];
-  function resize(e: React.PointerEvent) {
-    e.preventDefault();
-    const target = e.currentTarget;
-    const grid = target.parentElement;
-    if (!grid) return;
-    const bounds = grid.getBoundingClientRect();
-    target.setPointerCapture(e.pointerId);
-    const move = (ev: PointerEvent) =>
-      setSplit(
-        Math.max(
-          35,
-          Math.min(65, ((ev.clientX - bounds.left) / bounds.width) * 100),
-        ),
-      );
-    const stop = () => {
-      target.removeEventListener("pointermove", move as EventListener);
-      setSplit((value) => {
-        localStorage.setItem("relay.exchangeSplit", String(value));
-        return value;
+  function changeMethod(method: string) {
+    if (["POST", "PUT", "PATCH"].includes(method)) {
+      update({
+        method,
+        ...(d.bodyType === "none"
+          ? { bodyType: "json", body: d.body || "{\n  \n}" }
+          : {}),
       });
-    };
-    target.addEventListener("pointermove", move as EventListener);
-    target.addEventListener("pointerup", stop, { once: true });
+      showOutbound("Body");
+    } else update({ method });
   }
 
   function format() {
@@ -486,24 +489,6 @@ export default function RequestPanel({ tab }: { tab: Tab }) {
         </div>
         <div>
           <button
-            className="layout-toggle icon-button"
-            aria-label={
-              stacked ? "Use side-by-side layout" : "Use stacked layout"
-            }
-            title={stacked ? "Use side-by-side layout" : "Use stacked layout"}
-            onClick={() =>
-              setStacked((current) => {
-                localStorage.setItem(
-                  "relay.exchangeLayout",
-                  current ? "split" : "stacked",
-                );
-                return !current;
-              })
-            }
-          >
-            {stacked ? <Columns2 size={16} /> : <Rows2 size={16} />}
-          </button>
-          <button
             className="text-button"
             title="Copy cURL command"
             onClick={() => {
@@ -536,76 +521,123 @@ export default function RequestPanel({ tab }: { tab: Tab }) {
           </button>
         </div>
       </div>
-      <form
-        className="url-bar"
-        onSubmit={(e) => {
-          e.preventDefault();
-          guard(send());
-        }}
-      >
-        <div className="method-select">
-          <input
-            list="http-methods"
-            aria-label="HTTP method"
-            value={d.method}
-            className={`method-${d.method.toLowerCase()}`}
-            onChange={(e) => update({ method: e.target.value.toUpperCase() })}
-          />
-          <ChevronDown size={11} />
-          <datalist id="http-methods">
-            {methods.map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </datalist>
-        </div>
-        <input
-          className="url-input"
-          aria-label="Request URL"
-          placeholder="Paste a URL, {{variable}}, or cURL command"
-          onPaste={(event) => {
-            const text = event.clipboardData.getData("text").trim();
-            if (!text.startsWith("curl ")) return;
-            event.preventDefault();
-            try {
-              const imported = importCurl(text);
-              update(imported);
-              setSection(imported.bodyType === "none" ? "Params" : "Body");
-              toast(
-                "cURL unpacked into this request. Review and send when ready.",
-              );
-            } catch (error) {
-              toast(String(error));
-            }
+      <div className="request-composer">
+        <form
+          className="url-bar"
+          onSubmit={(e) => {
+            e.preventDefault();
+            guard(send());
           }}
-          value={d.url}
-          onChange={(e) => update({ url: e.target.value })}
-          spellCheck={false}
-        />
-        <button
-          className={`send-button ${tab.running ? "cancel" : ""}`}
-          type={tab.running ? "button" : "submit"}
-          onClick={tab.running ? () => guard(cancel()) : undefined}
         >
-          {tab.running ? (
-            <>
-              <Square size={12} /> Cancel
-            </>
-          ) : (
-            <>
-              Send <MoveUpRight size={15} />
-            </>
-          )}
-        </button>
-      </form>
-      <div
-        className={`exchange-grid ${stacked ? "stacked-layout" : "split-layout"}`}
-        style={{
-          gridTemplateColumns: stacked
-            ? undefined
-            : `minmax(0, ${split}fr) 9px minmax(0, ${100 - split}fr)`,
-        }}
-      >
-        <section className="request-dock" aria-label="Request configuration">
+          <div className="method-select">
+            <select
+              aria-label="HTTP method"
+              value={customMethod ? "custom" : d.method}
+              className={`method-${d.method.toLowerCase()}`}
+              onChange={(e) => {
+                const custom = e.target.value === "custom";
+                setCustomMethod(custom);
+                if (!custom) changeMethod(e.target.value);
+              }}
+            >
+              {methods.map((method) => (
+                <option key={method} value={method}>
+                  {method}
+                </option>
+              ))}
+              <option value="custom">Custom…</option>
+            </select>
+            {customMethod && (
+              <input
+                aria-label="Custom HTTP method"
+                value={d.method}
+                maxLength={32}
+                pattern="[!#$%&'*+.^_`|~0-9A-Za-z-]+"
+                onChange={(e) => changeMethod(e.target.value.toUpperCase())}
+                spellCheck={false}
+              />
+            )}
+          </div>
+          <input
+            className="url-input"
+            aria-label="Request URL"
+            placeholder="Paste a URL, {{variable}}, or cURL command"
+            onPaste={(event) => {
+              const text = event.clipboardData.getData("text").trim();
+              if (!text.startsWith("curl ")) return;
+              event.preventDefault();
+              try {
+                const imported = importCurl(text);
+                update(imported);
+                setCustomMethod(!methods.includes(imported.method));
+                showOutbound(imported.bodyType === "none" ? "Params" : "Body");
+                toast(
+                  "cURL unpacked into this request. Review and send when ready.",
+                );
+              } catch (error) {
+                toast(String(error));
+              }
+            }}
+            value={d.url}
+            onChange={(e) => update({ url: e.target.value })}
+            spellCheck={false}
+          />
+          <button
+            className={`send-button ${tab.running ? "cancel" : ""}`}
+            type={tab.running ? "button" : "submit"}
+            onClick={tab.running ? () => guard(cancel()) : undefined}
+          >
+            {tab.running ? (
+              <>
+                <Square size={12} /> Cancel
+              </>
+            ) : (
+              <>
+                Send <MoveUpRight size={15} />
+              </>
+            )}
+          </button>
+        </form>
+        <div className="request-quick-actions">
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => {
+              if (d.bodyType === "none")
+                update({ bodyType: "json", body: d.body || "{\n  \n}" });
+              showOutbound("Body");
+            }}
+          >
+            <Code2 size={14} />
+            {d.bodyType === "none"
+              ? "Add body"
+              : `Edit body · ${bodyTypes.find(([value]) => value === d.bodyType)?.[1] ?? d.bodyType}`}
+          </button>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => showOutbound()}
+          >
+            Configure outbound <ChevronDown size={13} />
+          </button>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => inbound.current?.scrollIntoView({ block: "start" })}
+          >
+            View response <ArrowUpRight size={13} />
+          </button>
+        </div>
+      </div>
+      <div className="exchange-grid response-first-layout">
+        <div className="inbound-workspace" ref={inbound}>
+          <Response tab={tab} />
+        </div>
+        <section
+          ref={outbound}
+          className="request-dock"
+          aria-label="Request configuration"
+        >
           <div className="dock-heading">
             <span className="dock-number">01</span>
             <span>OUTBOUND</span>
@@ -646,8 +678,8 @@ export default function RequestPanel({ tab }: { tab: Tab }) {
               },
               {
                 id: "Body",
-                title: "Payload",
-                hint: "What you send",
+                title: "Body",
+                hint: "JSON, forms, files & more",
                 summary:
                   bodyTypes.find(([value]) => value === d.bodyType)?.[1] ??
                   "None",
@@ -710,30 +742,6 @@ export default function RequestPanel({ tab }: { tab: Tab }) {
             ))}
           </div>
         </section>
-        {!stacked && (
-          <div
-            role="separator"
-            aria-label="Resize request and response panels"
-            aria-orientation="vertical"
-            aria-valuenow={Math.round(split)}
-            tabIndex={0}
-            className="exchange-resizer"
-            onPointerDown={resize}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowLeft") {
-                e.preventDefault();
-                setSplit(Math.max(35, split - 2));
-              }
-              if (e.key === "ArrowRight") {
-                e.preventDefault();
-                setSplit(Math.min(65, split + 2));
-              }
-            }}
-          >
-            <span />
-          </div>
-        )}
-        <Response tab={tab} />
       </div>
     </div>
   );

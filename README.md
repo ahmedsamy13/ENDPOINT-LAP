@@ -43,8 +43,9 @@ No environment variable or credential is required to launch Relay. API-specific 
 ## A different request workflow
 
 - **Destination first:** create a session and paste a URL or cURL command directly into the address field. cURL parsing never runs a shell or sends automatically.
-- **Request recipe:** expand Query, Identity, Headers, Payload, Checks & capture, or Delivery only when needed. Summaries remain visible when collapsed.
-- **Out and back:** keep request configuration and response side by side, resize them, or choose a persistent stacked layout. Hide the library to focus.
+- **Request recipe:** expand Query, Identity, Headers, Body, Checks & capture, or Delivery only when needed. Summaries remain visible when collapsed.
+- **Response first:** Inbound fills the workbench width; scroll down to configure or review Outbound. The sticky composer keeps method, URL and Send available. Jump directly to the body or response with one click.
+- **Clear methods and bodies:** the method dropdown lists every standard method, plus a custom option. Choosing POST, PUT or PATCH opens the body editor; existing payloads are preserved.
 - **Continue from the response:** inspect a JSON path and securely capture its value for the next request. Start assertions directly from the results view.
 - **Stay local:** named requests, hierarchy, environments, settings, saved session IDs and history persist in SQLite; keychain values never enter portable exports.
 

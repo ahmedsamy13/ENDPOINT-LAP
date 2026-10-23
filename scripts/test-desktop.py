@@ -32,10 +32,12 @@ class Fixture(http.server.BaseHTTPRequestHandler):
         self.reply()
     def do_POST(self):
         self.reply()
+    def do_PATCH(self):
+        self.reply()
     def reply(self):
         length = int(self.headers.get('Content-Length', '0'))
         payload = self.rfile.read(length).decode(errors='replace')
-        body = json.dumps({'ok': True, 'token': 'fixture-access-token', 'body': payload, 'authorization': self.headers.get('Authorization'), 'path': self.path}).encode()
+        body = json.dumps({'ok': True, 'method': self.command, 'token': 'fixture-access-token', 'body': payload, 'authorization': self.headers.get('Authorization'), 'path': self.path}).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Set-Cookie', 'session=fixture; HttpOnly; SameSite=Strict')
@@ -82,11 +84,93 @@ def wait(js, timeout=15):
     raise AssertionError(f'Timed out: {js}')
 
 
+def element(selector):
+    value = request(f'/session/{SESSION}/element', {'using': 'css selector', 'value': selector})
+    return value['element-6066-11e4-a52e-4f735466cecf']
+
+
+def click(selector):
+    request(f'/session/{SESSION}/element/{element(selector)}/click', {})
+
+
+def type_into(selector, text):
+    target = element(selector)
+    request(f'/session/{SESSION}/element/{target}/click', {})
+    request(f'/session/{SESSION}/element/{target}/clear', {})
+    request(f'/session/{SESSION}/element/{target}/value', {'text': text, 'value': list(text)})
+
+
+def outside_click():
+    # WebKitWebDriver's pointer-actions endpoint is not available on every
+    # distro. Deliver the exact dialog/backdrop click shape here; Chromium UI
+    # tests also exercise actual pointer clicks outside the modal.
+    script("document.querySelector('dialog[open]').dispatchEvent(new MouseEvent('click', {bubbles:true, clientX:12, clientY:12}))")
+
+
+def test_creation_workflow(project_id, url):
+    suffix = str(uuid.uuid4())[:8]
+    name = 'UI collection ' + suffix
+    request_name = 'UI request ' + suffix
+    copy_name = request_name + ' copy'
+    click('button[aria-label="New collection"]')
+    wait("return !!document.querySelector('dialog[aria-label=\"New collection\"][open]')")
+    type_into('dialog input[aria-label="Name"]', name)
+    outside_click()
+    assert script("return document.querySelector('dialog[aria-label=\"New collection\"]').open"), 'Backdrop click dismissed collection dialog'
+    actual_name = script("return document.querySelector('dialog input[aria-label=\"Name\"]').value")
+    assert actual_name == name, (actual_name, name)
+    click('dialog button[type="submit"]')
+    wait("return !document.querySelector('dialog[open]')")
+    collection = next(n for n in invoke('list_nodes', {'project': project_id}) if n['name'] == name)
+    print('PASS native collection dialog retains input and persists to SQLite')
+    click(f'button[aria-label="Add request to {name}"]')
+    wait("return !!document.querySelector('dialog[aria-label=\"New request\"][open]')")
+    type_into('dialog input[aria-label="Name"]', request_name)
+    outside_click()
+    assert script("return document.querySelector('dialog[aria-label=\"New request\"]').open"), 'Backdrop click dismissed request dialog'
+    click('dialog button[type="submit"]')
+    wait("return !document.querySelector('dialog[open]') && !!document.querySelector('.url-input')")
+    saved = next(n for n in invoke('list_nodes', {'project': project_id}) if n['name'] == request_name and n['parentId'] == collection['id'])
+    assert saved['parentId'] == collection['id'], 'New request did not persist in its collection'
+    print('PASS native request dialog persists immediately inside its collection')
+    assert script("return [...document.querySelectorAll('select[aria-label=\"HTTP method\"] option')].map(e=>e.value)") == ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','TRACE','CONNECT','custom']
+    type_into('input[aria-label="Request URL"]', url + '/ui-json')
+    click('select[aria-label="HTTP method"] option[value="POST"]')
+    wait("return !!document.querySelector('#recipe-Body .cm-content[contenteditable=true]')")
+    assert script("return document.querySelector('select[aria-label=\"Body type\"]').value") == 'json'
+    type_into('#recipe-Body .cm-content[contenteditable=true]', '{"hello":"ui-body"}')
+    click('.send-button')
+    wait("return !!document.querySelector('.status-chip') && !document.querySelector('.send-button.cancel')")
+    wait("return document.querySelector('.response-content').textContent.includes('ui-body')")
+    click('select[aria-label="HTTP method"] option[value="PATCH"]')
+    wait("return document.querySelector('#recipe-Body .cm-content').textContent.includes('ui-body')")
+    click('.send-button')
+    wait("return !!document.querySelector('.status-chip') && !document.querySelector('.send-button.cancel')")
+    wait("return document.querySelector('.response-content').textContent.includes('PATCH')")
+    print('PASS real desktop POST and PATCH preserve and send the edited JSON body')
+    script("document.querySelector('.request-workspace').scrollTop=0")
+    click('button[title="Save as new request"]')
+    wait("return !!document.querySelector('dialog[aria-label=\"Save this request\"][open]')")
+    type_into('dialog input[aria-label="Name"]', copy_name)
+    click('dialog button[type="submit"]')
+    wait("return !document.querySelector('dialog[open]')")
+    assert script("return [...document.querySelectorAll('.request-tab > button:first-child')].some(b=>b.title===arguments[0])", [request_name]), 'Save As removed original tab'
+    assert any(n['name'] == copy_name for n in invoke('list_nodes', {'project': project_id}))
+    # Original is dirty after changing method/body. Use its explicit discard prompt.
+    click(f'button[aria-label="Close {request_name}"]')
+    wait("return !!document.querySelector('dialog[aria-label=\"Close this request?\"][open]')")
+    click('dialog button[type="submit"]')
+    click(f'button[aria-label="Close {copy_name}"]')
+    wait("return !document.querySelector('dialog[open]')")
+    invoke('delete_node', {'id': collection['id']})
+    print('PASS real WebKit collection/request dialogs resist backdrop clicks → SQLite creation → POST/PATCH body editing and HTTP → Save As retains original')
+
+
 def start():
     global SESSION
     start_time = time.monotonic()
     SESSION = request('/session', {'capabilities': {'alwaysMatch': {'tauri:options': {'application': BINARY}}}})['sessionId']
-    wait("return document.body.innerText.includes('Native engine connected') && !!document.querySelector('.welcome-cta, .url-input')")
+    wait("return document.body.innerText.includes('Native engine connected') && !!document.querySelector('.welcome-cta, .url-input')", timeout=45)
     return round((time.monotonic()-start_time)*1000)
 
 
@@ -99,6 +183,7 @@ def main():
         startup = start()
         project = invoke('list_nodes', {'project': None})[0]
         p = project['id']
+        test_creation_workflow(p, url)
         folder = str(uuid.uuid4())
         request_id = str(uuid.uuid4())
         environment_id = str(uuid.uuid4())
